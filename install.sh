@@ -280,14 +280,11 @@ function compile_vim_on_centos()
 # 安装mac平台必备软件
 function install_prepare_software_on_mac()
 {
-    xcode-select --install
-
-    brew install vim gcc cmake ctags-exuberant ack
-
-    macos1014=$(is_macos1014)
-    if [ $macos1014 == 1 ]; then
-        open /Library/Developer/CommandLineTools/Packages/macOS_SDK_headers_for_macOS_10.14.pkg
-    fi
+    # 已安装的包为 no-op；macOS 用 Xcode/clang 编译无需 gcc；
+    # ctags-exuberant 公式名已不存在，exuberant ctags 即 brew 的 ctags；
+    # python@3.14 是 vim +python3/dyn 的运行时依赖（vim formula 不自动带）；
+    # HOMEBREW_NO_AUTO_UPDATE 跳过国内网络下极慢的 brew 自动更新
+    HOMEBREW_NO_AUTO_UPDATE=1 brew install vim cmake ctags ack python@3.14
 }
 
 # 安装FreeBSD必备软件
@@ -438,7 +435,7 @@ function copy_files()
     rm -rf ~/.ycm_extra_conf.py
     ln -s ${PWD}/.ycm_extra_conf.py ~
 
-    mkdir ~/.vim
+    mkdir -p ~/.vim
     rm -rf ~/.vim/colors
     ln -s ${PWD}/colors ~/.vim
 
@@ -481,7 +478,10 @@ function install_fonts_on_linux()
 # 安装vim插件
 function install_vim_plugin()
 {
-    vim -c "PlugInstall" -c "q" -c "q"
+    # --not-a-term 无终端运行；--sync 同步等待全部插件装完再退出。
+    # 不能用 -es：Ex 模式下 sourcing .vimrc 遇错会中止整个脚本，
+    # plug.vim 的 :PlugInstall 命令不会注册（E492）
+    vim --not-a-term -c "PlugInstall --sync" -c "qa!" </dev/null
 }
 
 # 安装ycm插件
@@ -535,6 +535,47 @@ function install_ycm()
     fi
 }
 
+# 在mac上安装ycm插件（编译 PlugInstall 已克隆的官方 YCM）
+function install_ycm_on_mac()
+{
+    # YCM 必须用 vim 实际使用的 Python 编译，否则 ycm_core.so 无法加载。
+    # vim 9.2 的 bottle 为 +python3/dyn 动态加载，Python 版本记录在
+    # --version 链接行的 rpath 中；旧版静态链接则用 otool 解析
+    py3_bin=""
+    py3_opt=$(vim --version | grep -oE 'opt/python@3\.[0-9]+' | head -1)
+    if [ -n "$py3_opt" ]; then
+        py3_dir="/opt/homebrew/${py3_opt}"
+        py3_ver=${py3_opt##*python@}
+        if [ ! -x "${py3_dir}/bin/python${py3_ver}" ]; then
+            # brew 以后升级 vim 可能改链新的 Python 小版本，自动补装对应版本
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install "python@${py3_ver}"
+        fi
+        for cand in "python${py3_ver}" python3; do
+            if [ -x "${py3_dir}/bin/${cand}" ]; then
+                py3_bin="${py3_dir}/bin/${cand}"
+                break
+            fi
+        done
+    fi
+    if [ -z "$py3_bin" ]; then
+        vim_bin=$(readlink -f /opt/homebrew/bin/vim)
+        py3_bin=$(otool -L "${vim_bin}" | grep -oE '/opt/homebrew/opt/python@[0-9.]+' | head -1)/bin/python3
+    fi
+    if [ ! -x "${py3_bin}" ]; then
+        echo "Not found python3 which vim uses, fallback to python3 in PATH."
+        py3_bin=python3
+    fi
+    echo "Compile ycm with python: ${py3_bin}"
+
+    cd ~/.vim/plugged/YouCompleteMe || return 1
+    git submodule update --init --recursive
+
+    # watchdog/regex 可选加速模块（缺失时 ycmd 退回慢速实现）
+    # PIP_BREAK_SYSTEM_PACKAGES=1 绕过 Homebrew Python 的 PEP 668 限制
+    PIP_BREAK_SYSTEM_PACKAGES=1 "${py3_bin}" -m pip install --quiet setuptools regex
+    PIP_BREAK_SYSTEM_PACKAGES=1 "${py3_bin}" install.py --clangd-completer
+}
+
 # 在android上安装ycm插件
 function install_ycm_on_android()
 {
@@ -579,8 +620,8 @@ function install_vimplus_on_mac()
     install_prepare_software_on_mac
     copy_files
     install_fonts_on_mac
-    install_ycm
     install_vim_plugin
+    install_ycm_on_mac
     print_logo
 }
 

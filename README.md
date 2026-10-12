@@ -19,8 +19,14 @@ An automatic configuration program for vim
 ### Mac OS X
 
 #### 安装[HomeBrew][3]
- 
-    /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+#### 安装Xcode或Command Line Tools
+
+YCM编译需要clang，脚本不会自动安装（原脚本中的`xcode-select --install`在已安装时会报错且需要GUI确认，已移除）：
+
+    xcode-select --install
 
 #### 安装vimplus
 
@@ -29,6 +35,16 @@ An automatic configuration program for vim
     ./install.sh
     
 注: apline用户请预先安装git,bash: apk add git bash  
+
+#### macOS本地补丁说明（与上游差异）
+
+本仓库的`install.sh`针对macOS打了本地补丁（未提交上游）：
+
+- YCM改为编译vim-plug安装的官方仓库版本：原`install_ycm`克隆的gitee快照已过时（`--clang-completer`被官方移除），且其Alpine判断的`||`短路逻辑导致**macOS上YCM永远不会被编译**
+- 自动检测并安装vim `+python3/dyn`所链接的Homebrew Python（如python@3.14），并用它编译`ycm_core`，避免与默认`python3`（如anaconda）错配
+- `PlugInstall`改用`--not-a-term` + `--sync`：无终端环境下原命令会立即退出杀掉异步克隆任务，一个插件都装不上；也不能用`vim -es`，Ex模式下sourcing `.vimrc`遇错会中止，`:PlugInstall`命令不会注册
+- brew依赖行不再安装gcc（macOS用Xcode/clang编译），加`HOMEBREW_NO_AUTO_UPDATE=1`跳过国内网络下极慢的brew自动更新
+- 重装：`cd ~/.vimplus && ./install.sh`（增量修复，备份提示答N即可；彻底重装先`rm -rf ~/.vim/plugged`）
 
 #### 设置Nerd Font
 
